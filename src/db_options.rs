@@ -32,7 +32,7 @@ use crate::{
         self, full_merge_callback, partial_merge_callback, MergeFn, MergeOperatorCallback,
     },
     slice_transform::SliceTransform,
-    ColumnFamilyDescriptor, Error, SnapshotWithThreadMode,
+    ColumnFamilyDescriptor, Error, SnapshotWithThreadMode, WriteBufferManager,
 };
 
 pub(crate) struct CacheWrapper {
@@ -3072,6 +3072,29 @@ impl Options {
     pub fn set_allow_ingest_behind(&mut self, val: bool) {
         unsafe {
             ffi::rocksdb_options_set_allow_ingest_behind(self.inner, c_uchar::from(val));
+        }
+    }
+
+    /// The memory usage of memtables will report to this `WriteBufferManager`. The same
+    /// `WriteBufferManager` can be  can be passed into multiple DBs and it will track the
+    /// sum of size of all the DBs. If the total size of all live memtables of all the
+    /// DBs exceeds a limit, a flush will be triggered in the next DB to which the next write
+    /// is issued, as long as there is one or more column family not already
+    /// flushing.
+    ///
+    /// If the object is only passed to one DB, the behavior is the same as
+    /// `db_write_buffer_size`. When `set_write_buffer_manager` is called, the value set will
+    /// override the call to `set_db_write_buffer_size`.
+    ///
+    /// This feature is disabled by default.
+    pub fn set_write_buffer_manager(&mut self, write_buffer_manager: &WriteBufferManager) {
+        // Safety: `WriteBufferManager` is guaranteed to point to a `shared_ptr` to the
+        // underlying cpp `WriteBufferManager`.
+        unsafe {
+            ffi::rocksdb_options_set_write_buffer_manager(
+                self.inner,
+                write_buffer_manager.0.inner.as_ptr(),
+            );
         }
     }
 }
