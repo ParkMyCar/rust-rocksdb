@@ -43,11 +43,11 @@ fn specify_cpu(build: &mut cc::Build) {
 
     if let Some(target_cpu) = target_cpu() {
         if target.contains("x86_64") {
-            build.flag_if_supported(&format!("-march{target_cpu}"));
+            build.flag_if_supported(&format!("-march={target_cpu}"));
 
             // The x86-64-vX targets are generic and do not support tuning.
             if !target_cpu.starts_with("x86-64-v") {
-                build.flag_if_supported(&format!("-mtune{target_cpu}"));
+                build.flag_if_supported(&format!("-mtune={target_cpu}"));
             }
         } else if target.contains("aarch64") {
             // The -mcpu argument is deprecated for x86 but supported for AArch64.
