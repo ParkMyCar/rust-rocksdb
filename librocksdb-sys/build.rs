@@ -29,6 +29,35 @@ fn rocksdb_include_dir() -> String {
     }
 }
 
+/// Extracts `target-cpu` from `CARGO_ENCODED_RUSTFLAGS`.
+fn target_cpu() -> Option<String> {
+    rustflags::from_env().find_map(|flag| match flag {
+        rustflags::Flag::Codegen { opt, value } if opt == "target-cpu" => value,
+        _ => None,
+    })
+}
+
+/// Adds `-march` and `-mtune` arguments (or equivalent) based on the set `target-cpu`.
+fn specify_cpu(build: &mut cc::Build) {
+    let target = env::var("TARGET").unwrap();
+
+    if let Some(target_cpu) = target_cpu() {
+        if target.contains("x86_64") {
+            build.flag_if_supported(&format!("-march={target_cpu}"));
+
+            // The x86-64-vX targets are generic and do not support tuning.
+            if !target_cpu.starts_with("x86-64-v") {
+                build.flag_if_supported(&format!("-mtune={target_cpu}"));
+            }
+        } else if target.contains("aarch64") {
+            // The -mcpu argument is deprecated for x86 but supported for AArch64.
+            //
+            // See: https://gcc.gnu.org/onlinedocs/gcc/AArch64-Options.html
+            build.flag_if_supported(&format!("-mcpu={target_cpu}"));
+        }
+    }
+}
+
 fn bindgen_rocksdb() {
     let bindings = bindgen::Builder::default()
         .header(rocksdb_include_dir() + "/rocksdb/c.h")
@@ -104,7 +133,11 @@ fn build_rocksdb() {
         .filter(|file| !matches!(*file, "util/build_version.cc"))
         .collect::<Vec<&'static str>>();
 
-    if let (true, Ok(target_feature_value)) = (
+    // Prefer specifying a target CPU type over individual features because we're bound to get
+    // performance if we know the specific CPU.
+    if target_cpu().is_some() {
+        specify_cpu(&mut config);
+    } else if let (true, Ok(target_feature_value)) = (
         target.contains("x86_64"),
         env::var("CARGO_CFG_TARGET_FEATURE"),
     ) {
@@ -280,6 +313,10 @@ fn build_snappy() {
 
     if endianness == "big" {
         config.define("SNAPPY_IS_BIG_ENDIAN", Some("1"));
+    }
+
+    if target_cpu().is_some() {
+        specify_cpu(&mut config);
     }
 
     config.file("snappy/snappy.cc");
